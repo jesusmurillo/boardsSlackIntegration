@@ -1,79 +1,151 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const axios = require('axios');
+const express =  require('express');
 const { toBase64 } = require('base64-mongo-id');
+const axios = require('axios');
+const bodyParser = require('body-parser');
 
 const app = express();
-const port;
-
-const SLACK_WEBHOOK_URL = '';
-const BASE_GLO_URL = '';
+const port =;
 
 app.use(bodyParser.json());
 
-app.get('/ping', (req, res) => {
-  res.status(200).send('pong');
+// Creating constant variables for slack webhook url and glo URL
+const SLACK_WEBHOOK_URL = ''
+const BASE_GLO_URL = '';
+
+//test route
+//hitting localhost:9999/hello will return hello world
+app.get('/hello', (req, res) => {
+    res.send("Hello world!")
 });
 
-const getCardAddedMessage = (body) => {
-  const board = body.board;
-  const card = body.object;
-  const sender = body.sender;
+// build message that will post to slack
+const cardAdded = (body) => {
 
-  return {
-    text: `New card created in board \`${board.name}\``,
-    attachments: [
-      {
-        color: 'good',
-        title: card.name,
-        text: `${BASE_GLO_URL}/board/${toBase64(board.id)}/card/${toBase64(card.id)}`
-      }
-    ]
-  };
+    const board = body.board;
+    const card = body.card;
+    const sender = body.sender;
+
+    return{
+
+        blocks: [
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `_Added_ to board \`${board.name}\`` + '\n' +
+                                `*Card name:* <${BASE_GLO_URL}/board/${toBase64(board.id)}/card/${toBase64(card.id)}|${card.name}>` + '\n' +
+                                `Created by: \`${sender.username}\``
+                }
+            },
+            {
+                type: `divider`
+            }
+        ]
+    };
 };
 
-const getCardDeletedMessage = (body) => {
-  const board = body.board;
-  const card = body.object;
-  const sender = body.sender;
+//build message for when card is deleted
+const cardDeleted = (body) => {
 
-  return {
-    text: `Card deleted in board \`${board.name}\``,
-    attachments: [
-      {
-        color: '#FF0000',
-        title: card.name
-      }
-    ]
-  };
+    const board = body.board;
+    const card = body.card;
+    const sender = body.sender;
+    const description = body.card.description;
+
+    return {
+
+        blocks: [
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `_Deleted_ from board \`${board.name}\`` + `\n` + 
+                            `*Card name:* ${card.name}` + `\n` +
+                            `Deleted by: \`${sender.username}\`` + '\n' +
+                            `\`\`\` Description: ${description.text}\`\`\``
+                        }
+            },
+            {
+                type: 'divider'
+            }
+        ]
+    };
 };
 
-app.post('/glo-webhook', (req, res) => {
-  console.log(req.headers['x-gk-webhooks-event']);
-  console.log(req.body);
-  console.log();
+//build message for when card is archived
+const cardArchived = (body) => {
 
-  let message;
+    const board = body.board;
+    const card = body.card;
+    const sender = body.sender;
 
-  // Card added
-  if (req.headers['x-gk-webhooks-event'] === 'cards' && req.body.action === 'added') {
-    message = getCardAddedMessage(req.body);
-  }
-  // Card deleted
-  if (req.headers['x-gk-webhooks-event'] === 'cards' && req.body.action === 'deleted') {
-    message = getCardDeletedMessage(req.body);
-  }
+    return {
 
-  if (message) {
-    // Send Slack message
-    return axios.post(SLACK_WEBHOOK_URL, message)
-      .then(() => res.sendStatus(200))
-      .catch(() => res.sendStatus(500));
-  } else {
-    res.sendStatus(304);
-  }
+        blocks: [
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `_Archived_ from board \`${board.name}\`` + `\n` +
+                            `*Card name:* <${BASE_GLO_URL}/board/${toBase64(board.id)}/card/${toBase64(card.id)}|${card.name}>` + `\n` +
+                            `Card archived by: \`${sender.username}\``
+                }
+            },
+            {
+                type: 'divider'
+            }
+        ]
+    };
+};
+
+app.post('/', (req, res) => {
+
+    let message;
+
+    // trigger on added
+    if (req.headers['x-gk-event'] === 'cards' && req.body.action === 'added') {
+        message = cardAdded(req.body);
+    }
+
+    // trigger on deleted 
+    else if (req.headers['x-gk-event'] === 'cards' && req.body.action === 'deleted') {
+        message = cardDeleted(req.body);
+    }
+
+    //trigger on archive
+    else if (req.headers['x-gk-event'] === 'cards' && req.body.action === 'archived') {
+        message = cardArchived(req.body);
+    }    
+
+    //------------------------------------------------------------------------------->>
+    //NOT IS USE FOR SLACK MESSAGES
+
+    // trigger on duplicated
+    else if (req.headers['x-gk-event'] === 'cards' && req.body.action === 'copied') {
+        console.log(req.body.action + ' - ' + req.body.sender.username);
+    }
+
+    // trigger on update
+    else if (req.headers['x-gk-event'] === 'cards' && req.body.action === 'updated') {
+        console.log(req.body.action + ' - ' + req.body.sender.username);
+    }
+
+    // trigger on move
+    else if (req.headers['x-gk-event'] === 'cards' && req.body.action === 'moved_column') {
+        console.log(req.body.action + ' - ' + req.body.sender.username);
+    }
+    //<<-------------------------------------------------------------------------------
+
+    if (message) {
+        //Post message to slack
+        return axios.post(SLACK_WEBHOOK_URL, message)
+          .then(() => res.sendStatus(200))
+          .catch(() => res.sendStatus(500));
+    } else {
+        res.sendStatus(200);
+    }
 });
 
 app.listen(port, () => {
-  console.log(`listening on port ${port}`);
+    console.log(`Listening on port ${port}`)
 });
